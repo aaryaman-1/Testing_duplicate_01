@@ -422,9 +422,6 @@ def rows_are_duplicate(row1, row2, columns):
         vals1 = normalize_cell(row1[col])
         vals2 = normalize_cell(row2[col])
 
-        if not vals1 or not vals2:
-            continue
-
         
             set1 = set(vals1)
             set2 = set(vals2)

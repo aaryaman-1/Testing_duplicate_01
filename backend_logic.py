@@ -63,9 +63,16 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
     if remainder.startswith("."):
         remainder = remainder[1:]
 
+    # ==========================================
+    # FIX: Use regex to extract the common parts
+    # instead of common_str.split(".")
+    # ==========================================
     if "<" in remainder:
         common_str, body = remainder.split("<", 1)
-        common_parts = [p for p in common_str.split(".") if p]
+        common_parts = re.findall(
+            r"\([A-Z0-9]+[A-Z0-9]{2}\)|[A-Z0-9]+[A-Z0-9]{2}",
+            common_str
+        )
     else:
         common_parts = []
         body = remainder
@@ -74,7 +81,6 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
     parsed_rows = []
 
     for combo in combinations:
-
         combo = combo.strip()
         if not combo:
             continue
@@ -87,9 +93,7 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
         )
 
         for token in tokens:
-
             is_exception = False
-
             if token.startswith("("):
                 is_exception = True
                 token = token[1:-1]
@@ -101,9 +105,7 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
                 val = f"!{val}"
 
             if col in row_dict:
-
                 existing = row_dict[col]
-
                 if not isinstance(existing, list):
                     existing = [existing]
 
@@ -128,11 +130,32 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
     if not parsed_rows:
         raise ValueError("No valid combinations parsed.")
 
+    # ==========================================
+    # FIX: Apply the properly tokenized common parts
+    # ==========================================
     for row in parsed_rows:
         for part in common_parts:
+            is_exception = False
+            
+            if part.startswith("("):
+                is_exception = True
+                part = part[1:-1]
+                
             col = part[:-2]
             val = part[-2:]
-            row[col] = val
+            
+            if is_exception:
+                val = f"!{val}"
+            
+            # Combine logic
+            if col in row:
+                existing = row[col]
+                if not isinstance(existing, list):
+                    existing = [existing]
+                existing.append(val)
+                row[col] = existing
+            else:
+                row[col] = val
 
     all_columns = sorted({col for row in parsed_rows for col in row.keys()})
 

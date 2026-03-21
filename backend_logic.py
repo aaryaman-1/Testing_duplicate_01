@@ -342,123 +342,88 @@ def rows_are_duplicate(row1, row2, columns):
 
     present_window_cols = [c for c in columns if c in window_cols]
 
+    def check_core_logic(cols, r1, r2):
+
+        for col in cols:
+
+            vals1 = normalize_cell(r1[col])
+            vals2 = normalize_cell(r2[col])
+
+            if not vals1 or not vals2:
+                continue
+
+            set1 = set(vals1)
+            set2 = set(vals2)
+
+            incl1 = {v for v in set1 if is_inclusion(v)}
+            excl1 = {v[1:] for v in set1 if is_exclusion(v)}
+
+            incl2 = {v for v in set2 if is_inclusion(v)}
+            excl2 = {v[1:] for v in set2 if is_exclusion(v)}
+
+            # -------------------------------------------------
+            # CASE 1: Inclusion vs Inclusion (must match)
+            # -------------------------------------------------
+            if incl1 and incl2:
+                if incl1 != incl2:
+                    return False
+
+            # -------------------------------------------------
+            # CASE 2: Inclusion vs Exclusion conflict
+            # -------------------------------------------------
+            if incl1 and excl2:
+                if any(v in excl2 for v in incl1):
+                    return False
+
+            if incl2 and excl1:
+                if any(v in excl1 for v in incl2):
+                    return False
+
+            # -------------------------------------------------
+            # CASE 3: Exclusion vs Exclusion (strict check)
+            # Optional but important for correctness
+            # If both exclude everything except different possibilities,
+            # they may still overlap → so DO NOTHING here
+            # -------------------------------------------------
+
+        return True
+
+    # -------------------------------------------------
+    # WINDOW HANDLING
+    # -------------------------------------------------
+
     if present_window_cols:
 
-        # Check if any inclusion value exists in window columns
         window_has_values = False
 
         for col in present_window_cols:
-
-            vals1 = normalize_cell(row1[col])
-            vals2 = normalize_cell(row2[col])
-
-            if vals1 or vals2:
+            if normalize_cell(row1[col]) or normalize_cell(row2[col]):
                 window_has_values = True
                 break
 
-        # -------------------------------------------------
-        # CASE 2 → Window columns contain values
-        # -------------------------------------------------
         if window_has_values:
 
             main_columns = [c for c in columns if c not in window_cols]
             window_columns = present_window_cols
 
-            # Create reduced rows (without window columns)
             row1_main = row1[main_columns]
             row2_main = row2[main_columns]
 
-            # Run original logic on rows without window columns
-            for col in main_columns:
+            # ✅ FIXED CORE CHECK
+            if not check_core_logic(main_columns, row1_main, row2_main):
+                return False
 
-                vals1 = normalize_cell(row1_main[col])
-                vals2 = normalize_cell(row2_main[col])
-
-                if not vals1 or not vals2:
-                    continue
-
-                if (
-                    all(is_inclusion(v) for v in vals1)
-                    and all(is_inclusion(v) for v in vals2)
-                ):
-                    if vals1[0] != vals2[0]:
-                        return False
-
-            for col in main_columns:
-
-                vals1 = normalize_cell(row1_main[col])
-                vals2 = normalize_cell(row2_main[col])
-
-                if not vals1 or not vals2:
-                    continue
-
-                if any(is_exclusion(v) for v in vals1) and all(is_inclusion(v) for v in vals2):
-                    incl = vals2[0]
-                    if f"!{incl}" in vals1:
-                        return False
-
-                if any(is_exclusion(v) for v in vals2) and all(is_inclusion(v) for v in vals1):
-                    incl = vals1[0]
-                    if f"!{incl}" in vals2:
-                        return False
-
-            # If we reached here → main rows ARE duplicates
-            # Now check window overlap (to be implemented later)
-
+            # Window overlap check
             row1_windows = row1[window_columns]
             row2_windows = row2[window_columns]
 
-            if window_overlap(row1_windows, row2_windows):
-                return True
-            else:
-                return False
+            return window_overlap(row1_windows, row2_windows)
 
     # -------------------------------------------------
-    # ORIGINAL LOGIC (UNCHANGED)
+    # ORIGINAL LOGIC (REPLACED WITH FIXED CORE)
     # -------------------------------------------------
 
-    for col in columns:
-
-        vals1 = normalize_cell(row1[col])
-        vals2 = normalize_cell(row2[col])
-
-        
-            
-        set1 = set(vals1)
-        set2 = set(vals2)
-
-        incl1 = {v for v in set1 if is_inclusion(v)}
-        excl1 = {v[1:] for v in set1 if is_exclusion(v)}
-
-        incl2 = {v for v in set2 if is_inclusion(v)}
-        excl2 = {v[1:] for v in set2 if is_exclusion(v)}
-
-        # -------------------------------------------------
-        # CASE 1: Inclusion vs Inclusion (must match)
-        # -------------------------------------------------
-        if incl1 and incl2:
-            if incl1 != incl2:
-                return False
-
-        # -------------------------------------------------
-        # CASE 2: Inclusion vs Exclusion conflict
-        # -------------------------------------------------
-        if incl1 and excl2:
-            if any(v in excl2 for v in incl1):
-                return False
-
-        if incl2 and excl1:
-            if any(v in excl1 for v in incl2):
-                return False
-
-        # -------------------------------------------------
-        # CASE 3: Exclusion vs Exclusion (strict check)
-        # Optional but important for correctness
-        # If both exclude everything except different possibilities,
-        # they may still overlap → so DO NOTHING here
-        # -------------------------------------------------
-
-    return True
+    return check_core_logic(columns, row1, row2)
 
 
 def row_to_combination_string(row):

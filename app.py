@@ -205,7 +205,7 @@ elif mode == "Excel File Extraction":
             st.stop()
 
         new_product_numbers = multiline_to_list(new_product_numbers_text)
-        new_quantities = [float(q) for q in multiline_to_list(new_quantities_text)]
+        new_quantities = multiline_to_list(new_quantities_text)
         new_ecdvs = multiline_to_list(new_ecdvs_text)
         new_dates = multiline_to_list(new_dates_text)
 
@@ -234,20 +234,17 @@ elif mode == "Excel File Extraction":
             # ----------------------------------------------------
             for i in range(len(new_product_numbers)):
 
-                other_product_numbers, other_ecdvs, other_quantities = extract_filtered_excel_inputs(
+                other_product_numbers, other_ecdvs = extract_filtered_excel_inputs(
                     df_master=df_master,
                     code_function=code_function,
-                    new_product_NFCdate=new_dates[i],
-                    new_quantity=new_quantities[i]
+                    new_product_NFCdate=new_dates[i]
                 )
 
                 find_duplicates_multi_new(
                     [new_ecdvs[i]],
                     other_ecdvs,
                     [new_product_numbers[i]],
-                    other_product_numbers,
-                    [new_quantities[i]],
-                    other_quantities
+                    other_product_numbers
                 )
 
             # ----------------------------------------------------
@@ -257,8 +254,6 @@ elif mode == "Excel File Extraction":
                 new_ecdvs,
                 [],
                 new_product_numbers,
-                [],
-                new_quantities,
                 []
             )
 

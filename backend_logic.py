@@ -647,10 +647,7 @@ def extract_filtered_excel_inputs(
         df_filtered["Date application OEV debut"] != df_filtered["Date application OEV fin"]
     ]
 
-    # ✅ CHANGE: filter by quantity
-    df_filtered = df_filtered[
-        df_filtered["Coefficient de montage"] == new_quantity
-    ]
+    
 
     other_product_numbers = []
     other_ecdvs = []

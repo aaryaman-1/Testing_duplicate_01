@@ -425,32 +425,42 @@ def rows_are_duplicate(row1, row2, columns):
         if not vals1 or not vals2:
             continue
 
-        if (
-            all(is_inclusion(v) for v in vals1)
-            and all(is_inclusion(v) for v in vals2)
-        ):
-            if vals1[0] != vals2[0]:
-                return False
+        
+            set1 = set(vals1)
+            set2 = set(vals2)
 
-    for col in columns:
+            incl1 = {v for v in set1 if is_inclusion(v)}
+            excl1 = {v[1:] for v in set1 if is_exclusion(v)}
 
-        vals1 = normalize_cell(row1[col])
-        vals2 = normalize_cell(row2[col])
+            incl2 = {v for v in set2 if is_inclusion(v)}
+            excl2 = {v[1:] for v in set2 if is_exclusion(v)}
 
-        if not vals1 or not vals2:
-            continue
+            # -------------------------------------------------
+            # CASE 1: Inclusion vs Inclusion (must match)
+            # -------------------------------------------------
+            if incl1 and incl2:
+                if incl1 != incl2:
+                    return False
 
-        if any(is_exclusion(v) for v in vals1) and all(is_inclusion(v) for v in vals2):
-            incl = vals2[0]
-            if f"!{incl}" in vals1:
-                return False
+            # -------------------------------------------------
+            # CASE 2: Inclusion vs Exclusion conflict
+            # -------------------------------------------------
+            if incl1 and excl2:
+                if any(v in excl2 for v in incl1):
+                    return False
 
-        if any(is_exclusion(v) for v in vals2) and all(is_inclusion(v) for v in vals1):
-            incl = vals1[0]
-            if f"!{incl}" in vals2:
-                return False
+            if incl2 and excl1:
+                if any(v in excl1 for v in incl2):
+                    return False
 
-    return True
+            # -------------------------------------------------
+            # CASE 3: Exclusion vs Exclusion (strict check)
+            # Optional but important for correctness
+            # If both exclude everything except different possibilities,
+            # they may still overlap → so DO NOTHING here
+            # -------------------------------------------------
+
+        return True
 
 
 def row_to_combination_string(row):

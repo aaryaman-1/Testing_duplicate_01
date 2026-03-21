@@ -495,36 +495,26 @@ def find_duplicates_one_to_many(
         new_ecdv,
         other_ecdvs,
         new_product_number=None,
-        other_product_numbers=None
+        other_product_numbers=None,
+        new_quantity=None,
+        other_quantities=None
 ):
 
-    duplicates_global = False
+    result_rows = []
 
     for idx, ecdv in enumerate(other_ecdvs):
 
-        # Skip same product
         if new_product_number and other_product_numbers:
             if new_product_number == other_product_numbers[idx]:
                 continue
 
-        # --------------------------------------------------
-        # NEW RULE: Compare CM and Family first
-        # --------------------------------------------------
         new_cm, new_family = extract_cm_family(new_ecdv)
         other_cm, other_family = extract_cm_family(ecdv)
 
         if (new_cm != other_cm) or (new_family != other_family):
             continue
 
-        # --------------------------------------------------
-        # Original logic (UNCHANGED)
-        # --------------------------------------------------
-
-        df1, df2 = preprocess_ecdv_for_comparison(
-            new_ecdv,
-            ecdv
-        )
-
+        df1, df2 = preprocess_ecdv_for_comparison(new_ecdv, ecdv)
         columns = df1.columns
         duplicate_pairs = []
 
@@ -532,31 +522,26 @@ def find_duplicates_one_to_many(
             for _, row2 in df2.iterrows():
 
                 if rows_are_duplicate(row1, row2, columns):
-
                     combo1 = row_to_combination_string(row1)
                     combo2 = row_to_combination_string(row2)
-
                     duplicate_pairs.append(f"{combo1} and {combo2}")
 
         if duplicate_pairs:
 
-            duplicates_global = True
             unique_pairs = list(dict.fromkeys(duplicate_pairs))
 
-            if new_product_number and other_product_numbers:
-                part1 = f"ref. {new_product_number}"
-                part2 = f"ref. {other_product_numbers[idx]}"
-            else:
-                part1 = "part 1"
-                part2 = f"part {idx+2}"
+            part1 = f"ref. {new_product_number}" if new_product_number else "part 1"
+            part2 = f"ref. {other_product_numbers[idx]}" if other_product_numbers else f"part {idx+2}"
 
-            print(
-                f"\nBetween {part1} and {part2} the following combinations are forming duplicates: "
-                + ", ".join(unique_pairs) + "."
-            )
+            result_rows.append({
+                "duplicate ref 1": part1,
+                "quantity 1": new_quantity,
+                "duplicate ref 2": part2,
+                "quantity 2": other_quantities[idx] if other_quantities else None,
+                "combinations forming duplicate": ", ".join(unique_pairs)
+            })
 
-    if not duplicates_global:
-        print("\nNo duplicates are forming with the existing parts.")
+    return result_rows
 
 
 # =========================================================
@@ -605,6 +590,12 @@ def load_excel_master_dataframe(file_path):
 
     df_master = df_master[required_columns].copy()
 
+    # ✅ CHANGE: convert Coefficient to numeric
+    df_master["Coefficient de montage"] = pd.to_numeric(
+        df_master["Coefficient de montage"],
+        errors="coerce"
+    )
+
     df_master["Date application OEV debut"] = pd.to_datetime(
         df_master["Date application OEV debut"],
         errors="coerce",
@@ -635,7 +626,8 @@ def load_excel_master_dataframe(file_path):
 def extract_filtered_excel_inputs(
     df_master,
     code_function,
-    new_product_NFCdate
+    new_product_NFCdate,
+    new_quantity   # ✅ CHANGE: new parameter
 ):
 
     date_value = pd.to_datetime(new_product_NFCdate)
@@ -652,22 +644,30 @@ def extract_filtered_excel_inputs(
     ]
 
     df_filtered = df_filtered[
-    df_filtered["Date application OEV debut"] != df_filtered["Date application OEV fin"]
+        df_filtered["Date application OEV debut"] != df_filtered["Date application OEV fin"]
+    ]
+
+    # ✅ CHANGE: filter by quantity
+    df_filtered = df_filtered[
+        df_filtered["Coefficient de montage"] == new_quantity
     ]
 
     other_product_numbers = []
     other_ecdvs = []
+    other_quantities = []
 
     for _, row in df_filtered.iterrows():
 
         product = str(row["05 Numero produit"]).strip()
         ecdv = normalize_excel_ecdv_format(row["ECDV"])
+        qty = row["Coefficient de montage"]
 
         if product and ecdv:
             other_product_numbers.append(product)
             other_ecdvs.append(ecdv)
+            other_quantities.append(qty)
 
-    return other_product_numbers, other_ecdvs
+    return other_product_numbers, other_ecdvs, other_quantities
 # =========================================================
 # One new wrapper function
 # =========================================================
@@ -676,83 +676,53 @@ def find_duplicates_multi_new(
         new_ecdvs,
         other_ecdvs,
         new_product_numbers,
-        other_product_numbers
+        other_product_numbers,
+        new_quantities=None,
+        other_quantities=None
 ):
-    """
-    Wrapper layer.
-    Does not modify original logic.
-    Only controls output formatting.
-    """
 
-    overall_output = []
-    duplicates_found_anywhere = False
+    if new_quantities is None:
+        new_quantities = [None] * len(new_ecdvs)
 
-    # ---------------------------------------------------
+    if other_quantities is None:
+        other_quantities = [None] * len(other_ecdvs)
+
+    all_rows = []
+
     # NEW vs EXISTING
-    # ---------------------------------------------------
-
-    # NEW RULE:
-    # Remove existing rows whose product numbers already exist in NEW list
     filtered_existing = [
-        (pn, ev)
-        for pn, ev in zip(other_product_numbers, other_ecdvs)
+        (pn, ev, qty)
+        for pn, ev, qty in zip(other_product_numbers, other_ecdvs, other_quantities)
         if pn not in set(new_product_numbers)
     ]
 
     if filtered_existing:
-        filtered_other_product_numbers, filtered_other_ecdvs = zip(*filtered_existing)
-        filtered_other_product_numbers = list(filtered_other_product_numbers)
-        filtered_other_ecdvs = list(filtered_other_ecdvs)
+        f_pn, f_ev, f_qty = zip(*filtered_existing)
     else:
-        filtered_other_product_numbers = []
-        filtered_other_ecdvs = []
+        f_pn, f_ev, f_qty = [], [], []
 
     for i in range(len(new_ecdvs)):
+        rows = find_duplicates_one_to_many(
+            new_ecdvs[i],
+            list(f_ev),
+            new_product_numbers[i],
+            list(f_pn),
+            new_quantities[i],
+            list(f_qty)
+        )
+        all_rows.extend(rows)
 
-        buffer = io.StringIO()
-
-        with contextlib.redirect_stdout(buffer):
-            find_duplicates_one_to_many(
-                new_ecdvs[i],
-                filtered_other_ecdvs,
-                new_product_numbers[i],
-                filtered_other_product_numbers
-            )
-
-        text = buffer.getvalue().strip()
-
-        if text and "No duplicates are forming" not in text:
-            duplicates_found_anywhere = True
-            overall_output.append(text)
-
-    # ---------------------------------------------------
     # NEW vs NEW
-    # ---------------------------------------------------
     for i in range(len(new_ecdvs)):
         for j in range(i + 1, len(new_ecdvs)):
+            rows = find_duplicates_one_to_many(
+                new_ecdvs[i],
+                [new_ecdvs[j]],
+                new_product_numbers[i],
+                [new_product_numbers[j]],
+                new_quantities[i],
+                [new_quantities[j]]
+            )
+            all_rows.extend(rows)
 
-            buffer = io.StringIO()
-
-            with contextlib.redirect_stdout(buffer):
-                find_duplicates_one_to_many(
-                    new_ecdvs[i],
-                    [new_ecdvs[j]],
-                    new_product_numbers[i],
-                    [new_product_numbers[j]]
-                )
-
-            text = buffer.getvalue().strip()
-
-            if text and "No duplicates are forming" not in text:
-                duplicates_found_anywhere = True
-                overall_output.append(text)
-
-    # ---------------------------------------------------
-    # FINAL PRINT
-    # ---------------------------------------------------
-    if duplicates_found_anywhere:
-        for block in overall_output:
-            print(block)
-            print()
-    else:
-        print("\nNo duplicates are forming with the existing parts.")
+    return all_rows

@@ -495,9 +495,7 @@ def find_duplicates_one_to_many(
         new_ecdv,
         other_ecdvs,
         new_product_number=None,
-        other_product_numbers=None,
-        new_quantity=None,
-        other_quantities=None
+        other_product_numbers=None
 ):
 
     duplicates_global = False
@@ -607,12 +605,6 @@ def load_excel_master_dataframe(file_path):
 
     df_master = df_master[required_columns].copy()
 
-    # ✅ CHANGE: convert Coefficient to numeric
-    df_master["Coefficient de montage"] = pd.to_numeric(
-        df_master["Coefficient de montage"],
-        errors="coerce"
-    )
-
     df_master["Date application OEV debut"] = pd.to_datetime(
         df_master["Date application OEV debut"],
         errors="coerce",
@@ -643,8 +635,7 @@ def load_excel_master_dataframe(file_path):
 def extract_filtered_excel_inputs(
     df_master,
     code_function,
-    new_product_NFCdate,
-    new_quantity   # ✅ CHANGE: new parameter
+    new_product_NFCdate
 ):
 
     date_value = pd.to_datetime(new_product_NFCdate)
@@ -661,30 +652,22 @@ def extract_filtered_excel_inputs(
     ]
 
     df_filtered = df_filtered[
-        df_filtered["Date application OEV debut"] != df_filtered["Date application OEV fin"]
-    ]
-
-    # ✅ CHANGE: filter by quantity
-    df_filtered = df_filtered[
-        df_filtered["Coefficient de montage"] == new_quantity
+    df_filtered["Date application OEV debut"] != df_filtered["Date application OEV fin"]
     ]
 
     other_product_numbers = []
     other_ecdvs = []
-    other_quantities = []
 
     for _, row in df_filtered.iterrows():
 
         product = str(row["05 Numero produit"]).strip()
         ecdv = normalize_excel_ecdv_format(row["ECDV"])
-        qty = row["Coefficient de montage"]
 
         if product and ecdv:
             other_product_numbers.append(product)
             other_ecdvs.append(ecdv)
-            other_quantities.append(qty)
 
-    return other_product_numbers, other_ecdvs, other_quantities
+    return other_product_numbers, other_ecdvs
 # =========================================================
 # One new wrapper function
 # =========================================================
@@ -693,22 +676,13 @@ def find_duplicates_multi_new(
         new_ecdvs,
         other_ecdvs,
         new_product_numbers,
-        other_product_numbers,
-        new_quantities=None,
-        other_quantities=None
+        other_product_numbers
 ):
     """
     Wrapper layer.
     Does not modify original logic.
     Only controls output formatting.
     """
-
-    # ---- FIX: handle None inputs (Manual Mode safety) ----
-    if new_quantities is None:
-        new_quantities = [None] * len(new_ecdvs)
-
-    if other_quantities is None:
-        other_quantities = [None] * len(other_ecdvs)
 
     overall_output = []
     duplicates_found_anywhere = False
@@ -720,20 +694,18 @@ def find_duplicates_multi_new(
     # NEW RULE:
     # Remove existing rows whose product numbers already exist in NEW list
     filtered_existing = [
-        (pn, ev, qty)
-        for pn, ev, qty in zip(other_product_numbers, other_ecdvs, other_quantities)
+        (pn, ev)
+        for pn, ev in zip(other_product_numbers, other_ecdvs)
         if pn not in set(new_product_numbers)
     ]
 
     if filtered_existing:
-        filtered_other_product_numbers, filtered_other_ecdvs, filtered_other_quantities = zip(*filtered_existing)
+        filtered_other_product_numbers, filtered_other_ecdvs = zip(*filtered_existing)
         filtered_other_product_numbers = list(filtered_other_product_numbers)
         filtered_other_ecdvs = list(filtered_other_ecdvs)
-        filtered_other_quantities = list(filtered_other_quantities)
     else:
         filtered_other_product_numbers = []
         filtered_other_ecdvs = []
-        filtered_other_quantities = []
 
     for i in range(len(new_ecdvs)):
 
@@ -744,9 +716,7 @@ def find_duplicates_multi_new(
                 new_ecdvs[i],
                 filtered_other_ecdvs,
                 new_product_numbers[i],
-                filtered_other_product_numbers,
-                new_quantities[i] if new_quantities else None,
-                filtered_other_quantities
+                filtered_other_product_numbers
             )
 
         text = buffer.getvalue().strip()
@@ -768,9 +738,7 @@ def find_duplicates_multi_new(
                     new_ecdvs[i],
                     [new_ecdvs[j]],
                     new_product_numbers[i],
-                    [new_product_numbers[j]],
-                    new_quantities[i] if new_quantities else None,
-                    [new_quantities[j]] if new_quantities else None
+                    [new_product_numbers[j]]
                 )
 
             text = buffer.getvalue().strip()

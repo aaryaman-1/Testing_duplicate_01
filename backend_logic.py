@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 import io
 import contextlib
+from zoneinfo import ZoneInfo
 
 # =========================================================
 # NEW HELPER (CM + FAMILY EXTRACTION)
@@ -11,7 +12,7 @@ import contextlib
 def extract_cm_family(ecdv: str):
     """
     Extract:
-    CM     → characters before first dot
+    CM      → characters before first dot
     Family → first 4 characters after first dot
     """
 
@@ -238,7 +239,6 @@ def window_overlap(row1_windows, row2_windows):
 
     # ---------------------------------------
     # Step 2: Generate reference dataframe
-    # (UNCHANGED logic reused)
     # ---------------------------------------
 
     prefixes = ["W4", "R7", "R0", "R8", "V7", "V8", "V0", "V9"]
@@ -271,25 +271,30 @@ def window_overlap(row1_windows, row2_windows):
         year = 2020 + (idx // 4)
         return f"{quarters[idx % 4]}{year}"
 
-    french_date = datetime.now(ZoneInfo("Europe/Paris")).date()
-    idx_now = get_window_from_date(french_date.strftime("%Y-%m-%d"))
+    french_date_obj = datetime.now(ZoneInfo("Europe/Paris"))
+    idx_now = get_window_from_date(french_date_obj.strftime("%Y-%m-%d"))
+
+    # logic to find the START of the current quarter in France
+    q_letter, _, q_year = quarter_from_date(french_date_obj)
+    month_map_q = {"A": 1, "B": 4, "C": 7, "D": 10}
+    current_quarter_start = datetime(q_year, month_map_q[q_letter], 1)
 
     start_idx = idx_now - 10
     end_idx = idx_now + 6
 
-    windows = []
-    quarters = []
+    windows_list = []
+    quarters_list = []
 
     for idx in range(start_idx, end_idx + 1):
-        windows.append(sequence_element_from_index(idx))
-        quarters.append(quarter_from_index(idx))
+        windows_list.append(sequence_element_from_index(idx))
+        quarters_list.append(quarter_from_index(idx))
 
     types = ["closing"] * 9 + ["opening"] * 8
 
-    df = pd.DataFrame({
-        "Window": windows,
+    df_ref = pd.DataFrame({
+        "Window": windows_list,
         "type": types,
-        "quarter": quarters
+        "quarter": quarters_list
     })
 
     # ---------------------------------------
@@ -299,48 +304,29 @@ def window_overlap(row1_windows, row2_windows):
     def get_date_range(window_list):
 
         if not window_list:
-            return (
-                french_date, 
-                datetime.max
-            )
+            return (datetime(french_date_obj.year, french_date_obj.month, french_date_obj.day), datetime.max)
 
         start_date = None
         end_date = None
 
         for w in window_list:
-
-            match = df[df["Window"] == w]
-
+            match = df_ref[df_ref["Window"] == w]
             if match.empty:
                 continue
 
             w_type = match.iloc[0]["type"]
             q = match.iloc[0]["quarter"]
-
-            q_letter = q[0]
+            q_let = q[0]
             year = int(q[1:])
+            month_map = {"A": 1, "B": 4, "C": 7, "D": 10}
 
-            # Opening → start date
             if w_type == "opening":
-
-                month_map = {"A": 1, "B": 4, "C": 7, "D": 10}
-                start_date = datetime(year, month_map[q_letter], 2)
-
-            # Closing → end date (+2 years)
+                start_date = datetime(year, month_map[q_let], 2)
             else:
+                end_date = datetime(year + 2, month_map[q_let], 1)
 
-                month_map = {"A": 1, "B": 4, "C": 7, "D": 10}
-                end_date = datetime(year + 2, month_map[q_letter], 1)
-
-        if start_date is None:
-            start_date = datetime.min
-
-        if end_date is None:
-            end_date = datetime.max
-
-        if start_date > end_date:
-            raise ValueError("Invalid date range: window start_date is greater than end_date")
-
+        if start_date is None: start_date = datetime.min
+        if end_date is None: end_date = datetime.max
         return start_date, end_date
 
     r1_start, r1_end = get_date_range(row1_w)
@@ -350,10 +336,17 @@ def window_overlap(row1_windows, row2_windows):
         return False
 
     # ---------------------------------------
-    # Step 4: Overlap check (inclusive)
+    # Step 4: OVERLAP DURATION CHECK
     # ---------------------------------------
+    # Calculate the intersection of the two ranges
+    overlap_start = max(r1_start, r2_start)
+    overlap_end = min(r1_end, r2_end)
 
-    return (r1_start <= r2_end) and (r2_start <= r1_end)
+    # Valid if they overlap mathematically AND the overlap ends in present/future
+    is_overlapping = overlap_start <= overlap_end
+    is_not_historical = overlap_end >= current_quarter_start
+
+    return is_overlapping and is_not_historical
 
 def rows_are_duplicate(row1, row2, columns):
 
@@ -426,7 +419,7 @@ def rows_are_duplicate(row1, row2, columns):
                         return False
 
             # If we reached here → main rows ARE duplicates
-            # Now check window overlap (to be implemented later)
+            # Now check window overlap 
 
             row1_windows = row1[window_columns]
             row2_windows = row2[window_columns]
@@ -528,8 +521,10 @@ def find_duplicates_one_to_many(
     for idx, ecdv in enumerate(other_ecdvs):
 
         if new_product_number and other_product_numbers:
-            if new_product_number == other_product_numbers[idx]:
+            # Only skip if BOTH the product number AND the quantity are identical
+            if new_product_number == other_product_numbers[idx] and new_quantity == other_quantities[idx]:
                 continue
+        
 
         new_cm, new_family = extract_cm_family(new_ecdv)
         other_cm, other_family = extract_cm_family(ecdv)
@@ -553,8 +548,8 @@ def find_duplicates_one_to_many(
 
             unique_pairs = list(dict.fromkeys(duplicate_pairs))
 
-            part1 = f"ref. {new_product_number}" if new_product_number else "part 1"
-            part2 = f"ref. {other_product_numbers[idx]}" if other_product_numbers else f"part {idx+2}"
+            part1 = f"{new_product_number}" if new_product_number else "part 1"
+            part2 = f"{other_product_numbers[idx]}" if other_product_numbers else f"part {idx+2}"
 
             result_rows.append({
                 "duplicate ref 1": part1,
@@ -670,7 +665,7 @@ def extract_filtered_excel_inputs(
         df_filtered["Date application OEV debut"] != df_filtered["Date application OEV fin"]
     ]
 
-    
+
 
     other_product_numbers = []
     other_ecdvs = []

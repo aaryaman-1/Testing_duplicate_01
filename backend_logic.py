@@ -63,9 +63,13 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
         remainder = remainder[1:]
 
     # ==========================================
-    # FIX: Use regex to extract the common parts
-    # instead of common_str.split(".")
+    # FIX: Handle "Tous" type (Universal) ECDV
+    # If there is no remainder after the CM/Family,
+    # it is a wildcard matching all configurations.
     # ==========================================
+    if not remainder:
+        return pd.DataFrame([{}])
+
     if "<" in remainder:
         common_str, body = remainder.split("<", 1)
         common_parts = re.findall(
@@ -126,12 +130,13 @@ def inverse_generate_ecdv(ecdv_string: str) -> pd.DataFrame:
 
         parsed_rows.append(row_dict)
 
+    # ==========================================
+    # FIX: Bulletproof Fallback
+    # Prevents crashes on anomalous string parses
+    # ==========================================
     if not parsed_rows:
-        raise ValueError("No valid combinations parsed.")
+        return pd.DataFrame([{}])
 
-    # ==========================================
-    # FIX: Apply the properly tokenized common parts
-    # ==========================================
     for row in parsed_rows:
         for part in common_parts:
             is_exception = False
@@ -650,10 +655,10 @@ def extract_filtered_excel_inputs(
     code_function,
     new_product_NFCdate,
     new_quantity,
-    cancel_product_numbers=None,  # <--- NEW
-    cancel_quantities=None,       # <--- NEW
-    cancel_ecdvs=None,            # <--- NEW
-    cancel_product_names=None     # <--- NEW
+    cancel_product_numbers=None, 
+    cancel_quantities=None,      
+    cancel_ecdvs=None,           
+    cancel_product_names=None    
 ):
 
     date_value = pd.to_datetime(new_product_NFCdate)

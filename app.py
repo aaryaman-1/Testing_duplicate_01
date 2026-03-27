@@ -199,6 +199,24 @@ elif mode == "Excel File Extraction":
 
     st.markdown("---")
 
+    # ✅ ADDED: Cancelled Parts UI
+    st.subheader("Cancelled Parts")
+    c_col1, c_col2, c_col3, c_col4 = st.columns([2, 1, 3, 3])
+
+    with c_col1:
+        cancel_product_numbers_text = st.text_area("Cancel Product Numbers", height=200)
+
+    with c_col2:
+        cancel_quantities_text = st.text_area("Cancel Quantities", height=200)
+
+    with c_col3:
+        cancel_product_names_text = st.text_area("Cancel Product Names", height=200)
+
+    with c_col4:
+        cancel_ecdvs_text = st.text_area("Cancel ECDVs", height=200)
+
+    st.markdown("---")
+
     code_function = st.text_input("Code Function")
 
     uploaded_file = st.file_uploader(
@@ -216,12 +234,29 @@ elif mode == "Excel File Extraction":
             st.error("Enter Code Function.")
             st.stop()
 
+        # 1. Read base text inputs
         new_product_numbers = multiline_to_list(new_product_numbers_text)
-        new_quantities = [float(q) for q in multiline_to_list(new_quantities_text)]
         new_ecdvs = multiline_to_list(new_ecdvs_text)
         new_dates = multiline_to_list(new_dates_text)
-        new_product_names = multiline_to_list(new_product_names_text)
+        
+        raw_quantities = multiline_to_list(new_quantities_text)
+        raw_product_names = multiline_to_list(new_product_names_text)
 
+        is_major = (len(code_function.strip()) == 8)
+
+        # 2. Smart Quantity Handling (Optional for Major)
+        if is_major and not raw_quantities:
+            new_quantities = [None] * len(new_product_numbers)
+        else:
+            new_quantities = [float(q) for q in raw_quantities]
+
+        # 3. Smart Product Name Handling (Optional for Major)
+        if is_major and not raw_product_names:
+            new_product_names = [""] * len(new_product_numbers)
+        else:
+            new_product_names = raw_product_names
+
+        # 4. Standard Length Validations
         if len(new_product_numbers) != len(new_ecdvs):
             st.error("Mismatch: New Product Numbers vs ECDVs.")
             st.stop()
@@ -238,6 +273,27 @@ elif mode == "Excel File Extraction":
             st.error("Mismatch: Product Numbers vs Product Names.")
             st.stop()
 
+        # 5. Read Cancelled Text Inputs
+        cancel_product_numbers = multiline_to_list(cancel_product_numbers_text)
+        raw_cancel_quantities = multiline_to_list(cancel_quantities_text)
+        cancel_product_names = multiline_to_list(cancel_product_names_text)
+        cancel_ecdvs = multiline_to_list(cancel_ecdvs_text)
+
+        if cancel_product_numbers:
+            if len(cancel_product_numbers) != len(raw_cancel_quantities):
+                st.error("Mismatch: Cancel Numbers vs Cancel Quantities.")
+                st.stop()
+            if len(cancel_product_numbers) != len(cancel_product_names):
+                st.error("Mismatch: Cancel Numbers vs Cancel Names.")
+                st.stop()
+            if len(cancel_product_numbers) != len(cancel_ecdvs):
+                st.error("Mismatch: Cancel Numbers vs Cancel ECDVs.")
+                st.stop()
+            cancel_quantities = [float(q) for q in raw_cancel_quantities]
+        else:
+            cancel_quantities = []
+
+
         df_master = cached_load_excel(uploaded_file)
 
         all_rows = []
@@ -249,7 +305,11 @@ elif mode == "Excel File Extraction":
                 df_master=df_master,
                 code_function=code_function,
                 new_product_NFCdate=new_dates[i],
-                new_quantity=new_quantities[i]
+                new_quantity=new_quantities[i],
+                cancel_product_numbers=cancel_product_numbers,
+                cancel_quantities=cancel_quantities,
+                cancel_ecdvs=cancel_ecdvs,
+                cancel_product_names=cancel_product_names
             )
 
             rows = find_duplicates_multi_new(

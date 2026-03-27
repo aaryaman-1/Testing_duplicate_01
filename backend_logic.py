@@ -475,7 +475,7 @@ def row_to_combination_string(row):
     return ".".join(parts) if parts else "ALL"
 
 # =========================================================
-# DUPLICATE ENGINE (UPDATED WITH MAJOR/MINOR RULE)
+# DUPLICATE ENGINE (UPDATED WITH DYNAMIC FORMATTING)
 # =========================================================
 
 def find_duplicates_one_to_many(
@@ -501,18 +501,14 @@ def find_duplicates_one_to_many(
 
         if is_major:
             if new_product_number and other_product_numbers:
-                # Only skip if BOTH the product number AND the quantity are identical
-                if new_product_number == other_product_numbers[idx] and new_quantity == other_quantities[idx]:
-                    continue
-                if new_quantity != other_quantities[idx]:
+                # Updated per your instructions: only verify product number
+                if new_product_number == other_product_numbers[idx]:
                     continue
         
         # ----------------------------------------------------------
         # NEW LOGIC: MINOR CODE FUNCTION CHECK
-        # If not 8 characters, quantities and names must also match
         # ----------------------------------------------------------
         if not is_major:
-            
             # Rule 2: Quantity variables must be equal
             q1 = new_quantity
             q2 = other_quantities[idx] if other_quantities else None
@@ -550,13 +546,25 @@ def find_duplicates_one_to_many(
             part1 = f"{new_product_number}" if new_product_number else "part 1"
             part2 = f"{other_product_numbers[idx]}" if other_product_numbers else f"part {idx+2}"
 
-            result_rows.append({
-                "duplicate ref 1": part1,
-                "quantity 1": new_quantity,
-                "duplicate ref 2": part2,
-                "quantity 2": other_quantities[idx] if other_quantities else None,
-                "combinations forming duplicate": ", ".join(unique_pairs)
-            })
+            # ✅ DYNAMIC OUTPUT FORMATTING BASED ON EXCEL REQUIREMENTS
+            if is_major:
+                result_rows.append({
+                    "duplicate ref 1": part1,
+                    "quantity 1": new_quantity,
+                    "duplicate ref 2": part2,
+                    "quantity 2": other_quantities[idx] if other_quantities else None,
+                    "combinations forming duplicate": ", ".join(unique_pairs)
+                })
+            else:
+                result_rows.append({
+                    "duplicate ref 1": part1,
+                    "name1": new_product_name,
+                    "quantity 1": new_quantity,
+                    "duplicate ref 2": part2,
+                    "name2": other_product_names[idx] if other_product_names else None,
+                    "quantity 2": other_quantities[idx] if other_quantities else None,
+                    "Duplicate Combinations": ", ".join(unique_pairs)
+                })
 
     return result_rows
 
@@ -596,7 +604,7 @@ def load_excel_master_dataframe(file_path):
 
     required_columns = [
         "05 Numero produit",
-        "Designation produit",     # <--- ADDED EXTRACT COLUMN
+        "Designation produit",     
         "02 Code fonction lien vehicule",
         "Coefficient de montage",
         "ECDV",
@@ -641,7 +649,11 @@ def extract_filtered_excel_inputs(
     df_master,
     code_function,
     new_product_NFCdate,
-    new_quantity   
+    new_quantity,
+    cancel_product_numbers=None,  # <--- NEW
+    cancel_quantities=None,       # <--- NEW
+    cancel_ecdvs=None,            # <--- NEW
+    cancel_product_names=None     # <--- NEW
 ):
 
     date_value = pd.to_datetime(new_product_NFCdate)
@@ -662,18 +674,40 @@ def extract_filtered_excel_inputs(
     ]
 
     other_product_numbers = []
-    other_product_names = []  # <--- NEW LIST
+    other_product_names = []  
     other_ecdvs = []
     other_quantities = []
+
+    # Safe fallback if cancellation arrays are empty
+    if not cancel_product_numbers:
+        cancel_product_numbers = []
+        cancel_quantities = []
+        cancel_ecdvs = []
+        cancel_product_names = []
 
     for _, row in df_filtered.iterrows():
 
         product = str(row["05 Numero produit"]).strip()
-        name = str(row["Designation produit"]).strip() if pd.notna(row["Designation produit"]) else ""  # <--- EXTRACT NAME
+        name = str(row["Designation produit"]).strip() if pd.notna(row["Designation produit"]) else ""  
         ecdv = normalize_excel_ecdv_format(row["ECDV"])
         qty = row["Coefficient de montage"]
 
         if product and ecdv:
+            
+            # ✅ ADDED: Explicit Cancellation Check
+            is_cancelled = False
+            for i in range(len(cancel_product_numbers)):
+                if (product == str(cancel_product_numbers[i]).strip() and
+                    name == str(cancel_product_names[i]).strip() and
+                    qty == cancel_quantities[i] and
+                    ecdv == str(cancel_ecdvs[i]).strip()):
+                    is_cancelled = True
+                    break
+            
+            # Skip this row if it completely matched a cancelled entry
+            if is_cancelled:
+                continue
+
             other_product_numbers.append(product)
             other_product_names.append(name)
             other_ecdvs.append(ecdv)
@@ -692,9 +726,9 @@ def find_duplicates_multi_new(
         other_product_numbers,
         new_quantities=None,
         other_quantities=None,
-        new_product_names=None,      # <--- NEW PARAM
-        other_product_names=None,    # <--- NEW PARAM
-        code_function=None           # <--- NEW PARAM
+        new_product_names=None,      
+        other_product_names=None,    
+        code_function=None           
 ):
 
     if new_quantities is None: new_quantities = [None] * len(new_ecdvs)
@@ -705,28 +739,17 @@ def find_duplicates_multi_new(
 
     all_rows = []
 
-    # NEW vs EXISTING
-    filtered_existing = [
-        (pn, ev, qty, nm)
-        for pn, ev, qty, nm in zip(other_product_numbers, other_ecdvs, other_quantities, other_product_names)
-        if pn not in set(new_product_numbers)
-    ]
-
-    if filtered_existing:
-        f_pn, f_ev, f_qty, f_nm = zip(*filtered_existing)
-    else:
-        f_pn, f_ev, f_qty, f_nm = [], [], [], []
-
+    # ✅ CHANGED: Removed auto-filtering. Identical existing numbers are passed directly in.
     for i in range(len(new_ecdvs)):
         rows = find_duplicates_one_to_many(
             new_ecdvs[i],
-            list(f_ev),
+            other_ecdvs,  
             new_product_numbers[i],
-            list(f_pn),
+            other_product_numbers, 
             new_quantities[i],
-            list(f_qty),
+            other_quantities,
             new_product_names[i],
-            list(f_nm),
+            other_product_names,
             code_function
         )
         all_rows.extend(rows)

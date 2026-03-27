@@ -505,7 +505,7 @@ def find_duplicates_one_to_many(
                 if new_product_number == other_product_numbers[idx] and new_quantity == other_quantities[idx]:
                     continue
                 if new_quantity != other_quantities[idx]:
-                continue
+                    continue
         
         # ----------------------------------------------------------
         # NEW LOGIC: MINOR CODE FUNCTION CHECK

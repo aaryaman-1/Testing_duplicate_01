@@ -218,7 +218,7 @@ def is_exclusion(v):
 def is_inclusion(v):
     return not v.startswith("!")
 
-def window_overlap(row1_windows, row2_windows):
+def window_overlap(row1_windows, row2_windows, nfc_date=None):
 
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -299,13 +299,32 @@ def window_overlap(row1_windows, row2_windows):
     })
 
     # ---------------------------------------
+    # Determine Fallback Start Date (NFC or Now)
+    # ---------------------------------------
+    if nfc_date is not None:
+        if isinstance(nfc_date, str):
+            d_nfc = pd.to_datetime(nfc_date)
+        else:
+            d_nfc = nfc_date
+        
+        m_nfc, y_nfc = d_nfc.month, d_nfc.year
+        if m_nfc <= 3: q_start_month = 1
+        elif m_nfc <= 6: q_start_month = 4
+        elif m_nfc <= 9: q_start_month = 7
+        else: q_start_month = 10
+        
+        fallback_start_date = datetime(y_nfc, q_start_month, 1)
+    else:
+        fallback_start_date = datetime(french_date_obj.year, french_date_obj.month, french_date_obj.day)
+
+    # ---------------------------------------
     # Step 3: Convert windows → date range
     # ---------------------------------------
 
     def get_date_range(window_list):
 
         if not window_list:
-            return (datetime(french_date_obj.year, french_date_obj.month, french_date_obj.day), datetime.max)
+            return (fallback_start_date, datetime.max)
 
         start_date = None
         end_date = None
@@ -347,7 +366,7 @@ def window_overlap(row1_windows, row2_windows):
 
     return is_overlapping and is_not_historical
 
-def rows_are_duplicate(row1, row2, columns):
+def rows_are_duplicate(row1, row2, columns, nfc_date=None):
 
     # -------------------------------------------------
     # WINDOW COLUMN LOGIC (CASE 1 + CASE 2)
@@ -409,7 +428,7 @@ def rows_are_duplicate(row1, row2, columns):
             row1_windows = row1[window_columns]
             row2_windows = row2[window_columns]
 
-            if window_overlap(row1_windows, row2_windows):
+            if window_overlap(row1_windows, row2_windows, nfc_date):
                 return True
             else:
                 return False
@@ -492,7 +511,8 @@ def find_duplicates_one_to_many(
         other_quantities=None,
         new_product_name=None,
         other_product_names=None,
-        code_function=None
+        code_function=None,
+        new_nfc_date=None
 ):
 
     result_rows = []
@@ -539,7 +559,7 @@ def find_duplicates_one_to_many(
         for _, row1 in df1.iterrows():
             for _, row2 in df2.iterrows():
 
-                if rows_are_duplicate(row1, row2, columns):
+                if rows_are_duplicate(row1, row2, columns, nfc_date=new_nfc_date):
                     combo1 = row_to_combination_string(row1)
                     combo2 = row_to_combination_string(row2)
                     duplicate_pairs.append(f"{combo1} and {combo2}")
@@ -733,7 +753,8 @@ def find_duplicates_multi_new(
         other_quantities=None,
         new_product_names=None,      
         other_product_names=None,    
-        code_function=None           
+        code_function=None,          
+        new_nfc_dates=None           
 ):
 
     if new_quantities is None: new_quantities = [None] * len(new_ecdvs)
@@ -741,6 +762,8 @@ def find_duplicates_multi_new(
     
     if new_product_names is None: new_product_names = [None] * len(new_ecdvs)
     if other_product_names is None: other_product_names = [None] * len(other_ecdvs)
+    
+    if new_nfc_dates is None: new_nfc_dates = [None] * len(new_ecdvs)
 
     all_rows = []
 
@@ -755,7 +778,8 @@ def find_duplicates_multi_new(
             other_quantities,
             new_product_names[i],
             other_product_names,
-            code_function
+            code_function,
+            new_nfc_dates[i]
         )
         all_rows.extend(rows)
 
@@ -771,7 +795,8 @@ def find_duplicates_multi_new(
                 [new_quantities[j]],
                 new_product_names[i],
                 [new_product_names[j]],
-                code_function
+                code_function,
+                new_nfc_dates[i]
             )
             all_rows.extend(rows)
 

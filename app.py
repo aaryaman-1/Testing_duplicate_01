@@ -312,6 +312,7 @@ elif mode == "Excel File Extraction":
                 cancel_product_names=cancel_product_names
             )
 
+            # ✅ FIX: Passing new_dates[i] to backend
             rows = find_duplicates_multi_new(
                 [new_ecdvs[i]],
                 other_ecdvs,
@@ -321,12 +322,14 @@ elif mode == "Excel File Extraction":
                 other_quantities,
                 [new_product_names[i]],
                 other_product_names,
-                code_function
+                code_function,
+                [new_dates[i]] 
             )
 
             all_rows.extend(rows)
 
         # NEW vs NEW
+        # ✅ FIX: Passing full new_dates array to backend
         rows = find_duplicates_multi_new(
             new_ecdvs,
             [],
@@ -336,7 +339,8 @@ elif mode == "Excel File Extraction":
             [],
             new_product_names,
             [],
-            code_function
+            code_function,
+            new_dates 
         )
 
         all_rows.extend(rows)

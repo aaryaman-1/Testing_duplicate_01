@@ -280,7 +280,8 @@ def window_overlap(row1_windows, row2_windows, nfc_date=None):
     month_map_q = {"A": 1, "B": 4, "C": 7, "D": 10}
     current_quarter_start = datetime(q_year, month_map_q[q_letter], 1)
 
-    start_idx = idx_now - 10
+    # ✅ UPDATED: Expanded backward reference window to 14 elements (21 total)
+    start_idx = idx_now - 14
     end_idx = idx_now + 6
 
     windows_list = []
@@ -290,7 +291,8 @@ def window_overlap(row1_windows, row2_windows, nfc_date=None):
         windows_list.append(sequence_element_from_index(idx))
         quarters_list.append(quarter_from_index(idx))
 
-    types = ["closing"] * 9 + ["opening"] * 8
+    # ✅ UPDATED: Added 4 'closing' elements to support the larger array size
+    types = ["closing"] * 13 + ["opening"] * 8
 
     df_ref = pd.DataFrame({
         "Window": windows_list,
